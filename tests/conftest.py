@@ -7,4 +7,3 @@ from click.testing import CliRunner
 def cli_runner() -> CliRunner:
     """Shared Click CLI test runner."""
     return CliRunner()
-
