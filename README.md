@@ -24,8 +24,9 @@ uv run cardinal hello --name Cardinal
 Format, lint, type-check, and test:
 
 ```bash
-uv run ruff format src/ tests/
-uv run ruff check src/ tests/
-uv run pyright
-uv run pytest -v
+make fmt        # auto-format
+make lint       # lint + format check
+make typecheck  # pyright
+make test       # pytest
+make check      # all of the above
 ```
