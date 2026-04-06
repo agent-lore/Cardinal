@@ -5,6 +5,7 @@ description = "Cardinal"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "click>=8.1",
+    "PyGithub>=2.1",
 ]
 
 [project.scripts]
