@@ -70,3 +70,58 @@ def closing_pr(repo: str, number: int) -> None:
     client = _make_client()
     info = client.get_closing_info(repo, number)
     echo_closing_info(info, number)
+
+
+# --- temporary commands for exercising write/file methods ---
+
+
+@cli.command("file")
+@click.argument("repo")
+@click.argument("path")
+@click.option("--ref", default=None, help="Branch, tag, or commit SHA.")
+def file_contents(repo: str, path: str, ref: str | None) -> None:
+    """Print the contents of PATH in REPO."""
+    client = _make_client()
+    click.echo(client.get_file_contents(repo, path, ref=ref))
+
+
+@cli.command("diff")
+@click.argument("repo")
+@click.argument("sha")
+def commit_diff(repo: str, sha: str) -> None:
+    """Print the unified diff for commit SHA in REPO."""
+    client = _make_client()
+    click.echo(client.get_commit_diff(repo, sha))
+
+
+@cli.command("comment")
+@click.argument("repo")
+@click.argument("number", type=int)
+@click.argument("body")
+def comment(repo: str, number: int, body: str) -> None:
+    """Post BODY as a comment on issue NUMBER in REPO."""
+    client = _make_client()
+    posted = client.post_comment(repo, number, body)
+    click.echo(f"Posted comment by {posted.author} at {posted.created_at:%Y-%m-%d}")
+
+
+@cli.command("reopen")
+@click.argument("repo")
+@click.argument("number", type=int)
+def reopen(repo: str, number: int) -> None:
+    """Reopen issue NUMBER in REPO."""
+    client = _make_client()
+    issue = client.reopen_issue(repo, number)
+    click.echo(f"#{issue.number} {issue.title} is now {issue.state}")
+
+
+@cli.command("new-issue")
+@click.argument("repo")
+@click.argument("title")
+@click.argument("body")
+@click.option("--label", "labels", multiple=True, help="Label to apply (repeatable).")
+def new_issue(repo: str, title: str, body: str, labels: tuple[str, ...]) -> None:
+    """Open a new issue in REPO."""
+    client = _make_client()
+    issue = client.open_issue(repo, title, body, labels=list(labels) or None)
+    click.echo(f"Opened #{issue.number}: {issue.title}")
