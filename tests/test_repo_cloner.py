@@ -8,11 +8,26 @@ from unittest.mock import patch
 
 import pytest
 
+from cardinal.database import list_repo_records
 from cardinal.repo_cloner import (
     RepoCloneError,
     clone_or_update,
     local_path_for,
 )
+
+
+def _fake_git(stdout_for_rev_parse: str = "deadbeefcafebabe"):
+    """Return a side_effect for subprocess.run that handles rev-parse specially."""
+
+    def run(cmd, **kwargs):
+        if cmd[:3] == ["git", "rev-parse", "HEAD"]:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout=stdout_for_rev_parse + "\n", stderr=""
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    return run
+
 
 # --- local_path_for ---
 
@@ -31,9 +46,14 @@ def test_local_path_for_rejects_bad_format(tmp_path: Path) -> None:
 
 
 def test_clone_or_update_clones_when_missing(tmp_path: Path) -> None:
-    with patch("cardinal.repo_cloner.subprocess.run") as run:
-        run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
-        result = clone_or_update("agent-lore/Cardinal", base_dir=tmp_path, token="tok")
+    db_path = tmp_path / "cardinal.db"
+    with patch("cardinal.repo_cloner.subprocess.run", side_effect=_fake_git()) as run:
+        result = clone_or_update(
+            "agent-lore/Cardinal",
+            base_dir=tmp_path,
+            token="tok",
+            db_path=db_path,
+        )
 
     assert result.action == "cloned"
     assert result.path == tmp_path / "agent-lore" / "Cardinal"
@@ -41,11 +61,12 @@ def test_clone_or_update_clones_when_missing(tmp_path: Path) -> None:
     # parent directory was created
     assert (tmp_path / "agent-lore").is_dir()
 
-    # one git clone call
-    run.assert_called_once()
-    cmd = run.call_args.args[0]
-    assert cmd[0:2] == ["git", "clone"]
-    assert "https://x-access-token:tok@github.com/agent-lore/Cardinal.git" in cmd
+    # git clone + git rev-parse HEAD
+    assert run.call_count == 2
+    clone_cmd = run.call_args_list[0].args[0]
+    assert clone_cmd[0:2] == ["git", "clone"]
+    assert "https://x-access-token:tok@github.com/agent-lore/Cardinal.git" in clone_cmd
+    assert run.call_args_list[1].args[0] == ["git", "rev-parse", "HEAD"]
 
 
 # --- clone_or_update: update existing ---
@@ -54,22 +75,30 @@ def test_clone_or_update_clones_when_missing(tmp_path: Path) -> None:
 def test_clone_or_update_updates_when_present(tmp_path: Path) -> None:
     target = tmp_path / "agent-lore" / "Cardinal"
     (target / ".git").mkdir(parents=True)
+    db_path = tmp_path / "cardinal.db"
 
-    with patch("cardinal.repo_cloner.subprocess.run") as run:
-        run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
-        result = clone_or_update("agent-lore/Cardinal", base_dir=tmp_path, token="tok")
+    with patch("cardinal.repo_cloner.subprocess.run", side_effect=_fake_git()) as run:
+        result = clone_or_update(
+            "agent-lore/Cardinal",
+            base_dir=tmp_path,
+            token="tok",
+            db_path=db_path,
+        )
 
     assert result.action == "updated"
     assert result.path == target
 
-    assert run.call_count == 2
+    # fetch + reset + rev-parse
+    assert run.call_count == 3
     fetch_cmd = run.call_args_list[0].args[0]
     reset_cmd = run.call_args_list[1].args[0]
+    rev_parse_cmd = run.call_args_list[2].args[0]
     assert fetch_cmd == ["git", "fetch", "--prune", "origin"]
     assert reset_cmd == ["git", "reset", "--hard", "origin/HEAD"]
-    # both ran in the target directory
-    assert run.call_args_list[0].kwargs["cwd"] == target
-    assert run.call_args_list[1].kwargs["cwd"] == target
+    assert rev_parse_cmd == ["git", "rev-parse", "HEAD"]
+    # all ran in the target directory
+    for call in run.call_args_list:
+        assert call.kwargs["cwd"] == target
 
 
 # --- error handling ---
@@ -83,7 +112,12 @@ def test_clone_failure_raises_repo_clone_error(tmp_path: Path) -> None:
         patch("cardinal.repo_cloner.subprocess.run", side_effect=err),
         pytest.raises(RepoCloneError) as excinfo,
     ):
-        clone_or_update("agent-lore/Cardinal", base_dir=tmp_path, token="secret-tok")
+        clone_or_update(
+            "agent-lore/Cardinal",
+            base_dir=tmp_path,
+            token="secret-tok",
+            db_path=tmp_path / "cardinal.db",
+        )
 
     # token is redacted from the error message
     assert "secret-tok" not in str(excinfo.value)
@@ -95,4 +129,57 @@ def test_clone_missing_git_executable(tmp_path: Path) -> None:
         patch("cardinal.repo_cloner.subprocess.run", side_effect=FileNotFoundError()),
         pytest.raises(RepoCloneError, match="git executable"),
     ):
-        clone_or_update("agent-lore/Cardinal", base_dir=tmp_path, token="tok")
+        clone_or_update(
+            "agent-lore/Cardinal",
+            base_dir=tmp_path,
+            token="tok",
+            db_path=tmp_path / "cardinal.db",
+        )
+
+
+# --- database recording ---
+
+
+def test_clone_records_repo_in_database(tmp_path: Path) -> None:
+    db_path = tmp_path / "cardinal.db"
+    with patch("cardinal.repo_cloner.subprocess.run", side_effect=_fake_git("abc123")):
+        clone_or_update(
+            "agent-lore/Cardinal",
+            base_dir=tmp_path,
+            token="tok",
+            db_path=db_path,
+        )
+
+    rows = list_repo_records(db_path)
+    assert len(rows) == 1
+    record = rows[0]
+    assert record.owner_repo == "agent-lore/Cardinal"
+    assert record.local_path == tmp_path / "agent-lore" / "Cardinal"
+    assert record.head_sha == "abc123"
+    assert record.last_fetched.tzinfo is not None  # UTC-aware
+
+
+def test_update_records_new_head_sha(tmp_path: Path) -> None:
+    target = tmp_path / "agent-lore" / "Cardinal"
+    (target / ".git").mkdir(parents=True)
+    db_path = tmp_path / "cardinal.db"
+
+    with patch("cardinal.repo_cloner.subprocess.run", side_effect=_fake_git("first")):
+        clone_or_update(
+            "agent-lore/Cardinal",
+            base_dir=tmp_path,
+            token="tok",
+            db_path=db_path,
+        )
+
+    with patch("cardinal.repo_cloner.subprocess.run", side_effect=_fake_git("second")):
+        clone_or_update(
+            "agent-lore/Cardinal",
+            base_dir=tmp_path,
+            token="tok",
+            db_path=db_path,
+        )
+
+    rows = list_repo_records(db_path)
+    assert len(rows) == 1  # upsert, not append
+    assert rows[0].head_sha == "second"
