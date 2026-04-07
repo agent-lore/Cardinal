@@ -1,9 +1,15 @@
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from cardinal.config import ConfigError, get_github_token
+from cardinal.config import (
+    DEFAULT_REPO_BASE_DIR,
+    ConfigError,
+    get_github_token,
+    get_repo_base_dir,
+)
 
 
 def test_get_token_from_env() -> None:
@@ -27,3 +33,27 @@ def test_dotenv_is_called() -> None:
     ):
         get_github_token()
         mock_load.assert_called_once()
+
+
+def test_repo_base_dir_default() -> None:
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch("cardinal.config.load_dotenv"),
+    ):
+        assert get_repo_base_dir() == DEFAULT_REPO_BASE_DIR
+
+
+def test_repo_base_dir_from_env() -> None:
+    with (
+        patch.dict(os.environ, {"CARDINAL_REPO_DIR": "/tmp/cardinal-test"}),
+        patch("cardinal.config.load_dotenv"),
+    ):
+        assert get_repo_base_dir() == Path("/tmp/cardinal-test")
+
+
+def test_repo_base_dir_expands_user() -> None:
+    with (
+        patch.dict(os.environ, {"CARDINAL_REPO_DIR": "~/custom-repos"}),
+        patch("cardinal.config.load_dotenv"),
+    ):
+        assert get_repo_base_dir() == Path.home() / "custom-repos"

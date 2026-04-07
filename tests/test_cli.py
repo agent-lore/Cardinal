@@ -144,6 +144,61 @@ def test_reopen_command(cli_runner: CliRunner, sample_issue: Issue) -> None:
     mock_client.reopen_issue.assert_called_once_with("owner/repo", 1)
 
 
+def test_clone_command(cli_runner: CliRunner, tmp_path) -> None:
+    from cardinal.repo_cloner import CloneResult
+
+    fake = CloneResult(path=tmp_path / "owner" / "repo", action="cloned")
+    with patch("cardinal.cli.clone_or_update", return_value=fake) as mock_clone:
+        result = cli_runner.invoke(cli, ["clone", "owner/repo"])
+
+    assert result.exit_code == 0
+    assert "cloned" in result.output
+    assert "owner/repo" in result.output
+    mock_clone.assert_called_once_with("owner/repo")
+
+
+def test_clone_command_handles_clone_error(cli_runner: CliRunner) -> None:
+    from cardinal.repo_cloner import RepoCloneError
+
+    with patch(
+        "cardinal.cli.clone_or_update",
+        side_effect=RepoCloneError("repository not found"),
+    ):
+        result = cli_runner.invoke(cli, ["clone", "owner/repo"])
+
+    assert result.exit_code != 0
+    assert "repository not found" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_command_handles_github_error(cli_runner: CliRunner) -> None:
+    from cardinal.errors import GitHubPermissionError
+
+    mock_client = MagicMock()
+    mock_client.open_issue.side_effect = GitHubPermissionError(
+        403, "Resource not accessible by personal access token"
+    )
+
+    with patch("cardinal.cli._make_client", return_value=mock_client):
+        result = cli_runner.invoke(cli, ["new-issue", "owner/repo", "T", "B"])
+
+    assert result.exit_code != 0
+    assert "403" in result.output
+    assert "Resource not accessible" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_command_handles_config_error(cli_runner: CliRunner) -> None:
+    from cardinal.config import ConfigError
+
+    with patch("cardinal.cli._make_client", side_effect=ConfigError("no token")):
+        result = cli_runner.invoke(cli, ["issues", "owner/repo"])
+
+    assert result.exit_code != 0
+    assert "no token" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_new_issue_command(cli_runner: CliRunner, sample_issue: Issue) -> None:
     mock_client = MagicMock()
     mock_client.open_issue.return_value = sample_issue
