@@ -144,6 +144,19 @@ def test_reopen_command(cli_runner: CliRunner, sample_issue: Issue) -> None:
     mock_client.reopen_issue.assert_called_once_with("owner/repo", 1)
 
 
+def test_clone_command(cli_runner: CliRunner, tmp_path) -> None:
+    from cardinal.repo_cloner import CloneResult
+
+    fake = CloneResult(path=tmp_path / "owner" / "repo", action="cloned")
+    with patch("cardinal.cli.clone_or_update", return_value=fake) as mock_clone:
+        result = cli_runner.invoke(cli, ["clone", "owner/repo"])
+
+    assert result.exit_code == 0
+    assert "cloned" in result.output
+    assert "owner/repo" in result.output
+    mock_clone.assert_called_once_with("owner/repo")
+
+
 def test_new_issue_command(cli_runner: CliRunner, sample_issue: Issue) -> None:
     mock_client = MagicMock()
     mock_client.open_issue.return_value = sample_issue

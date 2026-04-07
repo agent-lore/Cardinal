@@ -11,6 +11,7 @@ from cardinal.formatting import (
     echo_issue_list,
 )
 from cardinal.github_client import GitHubClient
+from cardinal.repo_cloner import clone_or_update
 
 
 def _make_client() -> GitHubClient:
@@ -113,6 +114,14 @@ def reopen(repo: str, number: int) -> None:
     client = _make_client()
     issue = client.reopen_issue(repo, number)
     click.echo(f"#{issue.number} {issue.title} is now {issue.state}")
+
+
+@cli.command("clone")
+@click.argument("repo")
+def clone(repo: str) -> None:
+    """Clone REPO locally, or update it if already cloned."""
+    result = clone_or_update(repo)
+    click.echo(f"{result.action}: {result.path}")
 
 
 @cli.command("new-issue")
