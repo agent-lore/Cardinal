@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import urllib.error
 import urllib.request
+from collections.abc import Callable
+from functools import wraps
 
 from github import Github
-from github.GithubException import UnknownObjectException
+from github.GithubException import GithubException, UnknownObjectException
 
 from cardinal.config import get_github_token
 from cardinal.converters import (
@@ -14,9 +17,49 @@ from cardinal.converters import (
     convert_issue,
     convert_pull_request,
 )
+from cardinal.errors import (
+    GitHubAuthError,
+    GitHubError,
+    GitHubNotFoundError,
+    GitHubPermissionError,
+    GitHubRateLimitError,
+)
 from cardinal.models import ClosingInfo, Comment, Commit, Issue, PullRequest
 
 _GITHUB_API = "https://api.github.com"
+
+
+def _translate_status(status: int, message: str) -> GitHubError:
+    if status == 401:
+        return GitHubAuthError(status, message)
+    if status == 403:
+        if "rate limit" in message.lower():
+            return GitHubRateLimitError(status, message)
+        return GitHubPermissionError(status, message)
+    if status == 404:
+        return GitHubNotFoundError(status, message)
+    return GitHubError(status, message)
+
+
+def _wrap_github_errors[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+    """Translate PyGithub and urllib HTTP errors into Cardinal GitHubError types."""
+
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return func(*args, **kwargs)
+        except GithubException as exc:
+            data = exc.data if isinstance(exc.data, dict) else {}
+            message = data.get("message") or str(exc.data)
+            raise _translate_status(exc.status, message) from exc
+        except urllib.error.HTTPError as exc:
+            try:
+                body = exc.read().decode("utf-8", errors="replace")
+            except OSError:
+                body = ""
+            raise _translate_status(exc.code, body or exc.reason) from exc
+
+    return wrapper
 
 
 class GitHubClient:
@@ -26,12 +69,15 @@ class GitHubClient:
         self._token = token or get_github_token()
         self._gh = Github(self._token)
 
+    @_wrap_github_errors
     def get_open_issues(self, owner_repo: str, *, limit: int = 100) -> list[Issue]:
         return self._list_issues(owner_repo, state="open", limit=limit)
 
+    @_wrap_github_errors
     def get_closed_issues(self, owner_repo: str, *, limit: int = 100) -> list[Issue]:
         return self._list_issues(owner_repo, state="closed", limit=limit)
 
+    @_wrap_github_errors
     def get_issue(self, owner_repo: str, number: int) -> Issue:
         repo = self._gh.get_repo(owner_repo)
         gh_issue = repo.get_issue(number)
@@ -41,6 +87,7 @@ class GitHubClient:
             raise ValueError(msg)
         return issue
 
+    @_wrap_github_errors
     def get_recent_commits(self, owner_repo: str, *, limit: int = 10) -> list[Commit]:
         repo = self._gh.get_repo(owner_repo)
         gh_commits = repo.get_commits()
@@ -51,6 +98,7 @@ class GitHubClient:
             results.append(convert_commit(gh_commit))
         return results
 
+    @_wrap_github_errors
     def get_closing_info(self, owner_repo: str, number: int) -> ClosingInfo | None:
         repo = self._gh.get_repo(owner_repo)
         gh_issue = repo.get_issue(number)
@@ -65,6 +113,7 @@ class GitHubClient:
 
         return ClosingInfo()  # Closed manually, no linked commit
 
+    @_wrap_github_errors
     def get_file_contents(
         self, owner_repo: str, path: str, ref: str | None = None
     ) -> str:
@@ -75,6 +124,7 @@ class GitHubClient:
             raise ValueError(msg)
         return contents.decoded_content.decode("utf-8")
 
+    @_wrap_github_errors
     def get_commit_diff(self, owner_repo: str, sha: str) -> str:
         url = f"{_GITHUB_API}/repos/{owner_repo}/commits/{sha}"
         req = urllib.request.Request(  # noqa: S310 (https URL is fixed)
@@ -89,12 +139,14 @@ class GitHubClient:
         with urllib.request.urlopen(req) as response:  # noqa: S310
             return response.read().decode("utf-8")
 
+    @_wrap_github_errors
     def post_comment(self, owner_repo: str, issue_number: int, body: str) -> Comment:
         repo = self._gh.get_repo(owner_repo)
         gh_issue = repo.get_issue(issue_number)
         gh_comment = gh_issue.create_comment(body)
         return convert_comment(gh_comment)
 
+    @_wrap_github_errors
     def reopen_issue(self, owner_repo: str, issue_number: int) -> Issue:
         repo = self._gh.get_repo(owner_repo)
         gh_issue = repo.get_issue(issue_number)
@@ -105,6 +157,7 @@ class GitHubClient:
             raise ValueError(msg)
         return issue
 
+    @_wrap_github_errors
     def open_issue(
         self,
         owner_repo: str,

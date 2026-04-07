@@ -7,11 +7,16 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from cardinal.errors import ConfigError
+
+__all__ = [
+    "DEFAULT_REPO_BASE_DIR",
+    "ConfigError",
+    "get_github_token",
+    "get_repo_base_dir",
+]
+
 DEFAULT_REPO_BASE_DIR = Path.home() / ".cardinal" / "repos"
-
-
-class ConfigError(Exception):
-    """Raised when required configuration is missing."""
 
 
 def get_github_token() -> str:

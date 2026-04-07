@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import urllib.error
 from datetime import UTC, datetime
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import pytest
+from github.GithubException import GithubException
 
-from cardinal.github_client import GitHubClient
+from cardinal.errors import (
+    GitHubAuthError,
+    GitHubError,
+    GitHubNotFoundError,
+    GitHubPermissionError,
+    GitHubRateLimitError,
+)
+from cardinal.github_client import GitHubClient, _translate_status
 
 
 @pytest.fixture
@@ -184,3 +194,77 @@ def test_open_issue_default_labels(client_with_mock_gh) -> None:
     client.open_issue("o/r", "T", "B")
 
     repo.create_issue.assert_called_once_with(title="T", body="B", labels=[])
+
+
+# --- error translation ---
+
+
+@pytest.mark.parametrize(
+    ("status", "message", "expected_type"),
+    [
+        (401, "Bad credentials", GitHubAuthError),
+        (403, "Resource not accessible", GitHubPermissionError),
+        (403, "API rate limit exceeded for user", GitHubRateLimitError),
+        (404, "Not Found", GitHubNotFoundError),
+        (500, "internal", GitHubError),
+    ],
+)
+def test_translate_status(
+    status: int, message: str, expected_type: type[GitHubError]
+) -> None:
+    err = _translate_status(status, message)
+    assert type(err) is expected_type
+    assert err.status == status
+    assert err.message == message
+    assert str(status) in str(err)
+
+
+def test_github_exception_translated_to_cardinal_error(
+    client_with_mock_gh,
+) -> None:
+    client, mock_gh = client_with_mock_gh
+    mock_gh.get_repo.side_effect = GithubException(404, {"message": "Not Found"}, None)
+
+    with pytest.raises(GitHubNotFoundError) as excinfo:
+        client.get_issue("o/r", 1)
+
+    assert excinfo.value.status == 404
+    assert "Not Found" in excinfo.value.message
+
+
+def test_permission_error_from_create_issue(client_with_mock_gh) -> None:
+    client, mock_gh = client_with_mock_gh
+    repo = MagicMock()
+    mock_gh.get_repo.return_value = repo
+    repo.create_issue.side_effect = GithubException(
+        403,
+        {"message": "Resource not accessible by personal access token"},
+        None,
+    )
+
+    with pytest.raises(GitHubPermissionError) as excinfo:
+        client.open_issue("o/r", "T", "B")
+
+    assert excinfo.value.status == 403
+    assert "Resource not accessible" in excinfo.value.message
+
+
+def test_http_error_from_get_commit_diff(client_with_mock_gh) -> None:
+    client, _ = client_with_mock_gh
+
+    http_err = urllib.error.HTTPError(
+        url="https://api.github.com/repos/o/r/commits/abc",
+        code=404,
+        msg="Not Found",
+        hdrs=None,  # type: ignore[arg-type]
+        fp=BytesIO(b'{"message":"No commit found for SHA: abc"}'),
+    )
+
+    with (
+        patch("cardinal.github_client.urllib.request.urlopen", side_effect=http_err),
+        pytest.raises(GitHubNotFoundError) as excinfo,
+    ):
+        client.get_commit_diff("o/r", "abc")
+
+    assert excinfo.value.status == 404
+    assert "No commit found" in excinfo.value.message

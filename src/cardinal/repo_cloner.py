@@ -7,10 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cardinal.config import get_github_token, get_repo_base_dir
+from cardinal.errors import RepoCloneError
 
-
-class RepoCloneError(Exception):
-    """Raised when a clone or update operation fails."""
+__all__ = ["CloneResult", "RepoCloneError", "clone_or_update", "local_path_for"]
 
 
 @dataclass(frozen=True)
