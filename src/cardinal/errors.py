@@ -21,6 +21,10 @@ class RepoCloneError(CardinalError):
     """Raised when cloning or updating a local repository fails."""
 
 
+class DatabaseError(CardinalError):
+    """Raised when a SQLite database operation fails."""
+
+
 class GitHubError(CardinalError):
     """Base class for errors returned by the GitHub API."""
 

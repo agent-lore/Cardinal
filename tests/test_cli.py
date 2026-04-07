@@ -157,6 +157,38 @@ def test_clone_command(cli_runner: CliRunner, tmp_path) -> None:
     mock_clone.assert_called_once_with("owner/repo")
 
 
+def test_repos_command_lists_records(cli_runner: CliRunner, tmp_path) -> None:
+    from cardinal.database import RepoRecord, record_repo_fetch
+
+    db_path = tmp_path / "cardinal.db"
+    record_repo_fetch(
+        db_path,
+        RepoRecord(
+            owner_repo="agent-lore/Cardinal",
+            local_path=tmp_path / "agent-lore" / "Cardinal",
+            head_sha="abc12345678",
+            last_fetched=datetime(2025, 1, 15, 12, 30, tzinfo=UTC),
+        ),
+    )
+
+    with patch("cardinal.cli.get_db_path", return_value=db_path):
+        result = cli_runner.invoke(cli, ["repos"])
+
+    assert result.exit_code == 0
+    assert "agent-lore/Cardinal" in result.output
+    assert "abc1234" in result.output
+    assert "2025-01-15" in result.output
+
+
+def test_repos_command_empty(cli_runner: CliRunner, tmp_path) -> None:
+    db_path = tmp_path / "cardinal.db"
+    with patch("cardinal.cli.get_db_path", return_value=db_path):
+        result = cli_runner.invoke(cli, ["repos"])
+
+    assert result.exit_code == 0
+    assert "no repos recorded" in result.output
+
+
 def test_clone_command_handles_clone_error(cli_runner: CliRunner) -> None:
     from cardinal.repo_cloner import RepoCloneError
 

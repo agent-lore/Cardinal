@@ -7,6 +7,8 @@ from functools import wraps
 
 import click
 
+from cardinal.config import get_db_path
+from cardinal.database import list_repo_records
 from cardinal.errors import CardinalError
 from cardinal.formatting import (
     echo_closing_info,
@@ -148,6 +150,21 @@ def clone(repo: str) -> None:
     """Clone REPO locally, or update it if already cloned."""
     result = clone_or_update(repo)
     click.echo(f"{result.action}: {result.path}")
+
+
+@cli.command("repos")
+@_friendly_errors
+def repos() -> None:
+    """List recorded repo clones/fetches from the database."""
+    records = list_repo_records(get_db_path())
+    if not records:
+        click.echo("(no repos recorded)")
+        return
+    for r in records:
+        click.echo(
+            f"{r.owner_repo}  {r.head_sha[:7]}  "
+            f"{r.last_fetched:%Y-%m-%d %H:%M:%S%z}  {r.local_path}"
+        )
 
 
 @cli.command("new-issue")

@@ -5,8 +5,10 @@ from unittest.mock import patch
 import pytest
 
 from cardinal.config import (
+    DEFAULT_DB_PATH,
     DEFAULT_REPO_BASE_DIR,
     ConfigError,
+    get_db_path,
     get_github_token,
     get_repo_base_dir,
 )
@@ -57,3 +59,27 @@ def test_repo_base_dir_expands_user() -> None:
         patch("cardinal.config.load_dotenv"),
     ):
         assert get_repo_base_dir() == Path.home() / "custom-repos"
+
+
+def test_db_path_default() -> None:
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch("cardinal.config.load_dotenv"),
+    ):
+        assert get_db_path() == DEFAULT_DB_PATH
+
+
+def test_db_path_from_env() -> None:
+    with (
+        patch.dict(os.environ, {"CARDINAL_DB_PATH": "/tmp/cardinal-test.db"}),
+        patch("cardinal.config.load_dotenv"),
+    ):
+        assert get_db_path() == Path("/tmp/cardinal-test.db")
+
+
+def test_db_path_expands_user() -> None:
+    with (
+        patch.dict(os.environ, {"CARDINAL_DB_PATH": "~/custom.db"}),
+        patch("cardinal.config.load_dotenv"),
+    ):
+        assert get_db_path() == Path.home() / "custom.db"

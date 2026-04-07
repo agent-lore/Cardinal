@@ -10,13 +10,16 @@ from dotenv import load_dotenv
 from cardinal.errors import ConfigError
 
 __all__ = [
+    "DEFAULT_DB_PATH",
     "DEFAULT_REPO_BASE_DIR",
     "ConfigError",
+    "get_db_path",
     "get_github_token",
     "get_repo_base_dir",
 ]
 
 DEFAULT_REPO_BASE_DIR = Path.home() / ".cardinal" / "repos"
+DEFAULT_DB_PATH = Path.home() / ".cardinal" / "cardinal.db"
 
 
 def get_github_token() -> str:
@@ -41,3 +44,16 @@ def get_repo_base_dir() -> Path:
     if raw:
         return Path(raw).expanduser()
     return DEFAULT_REPO_BASE_DIR
+
+
+def get_db_path() -> Path:
+    """Return the SQLite database path.
+
+    Reads CARDINAL_DB_PATH from environment (or .env), falling back to
+    ~/.cardinal/cardinal.db. The path is expanded but not created.
+    """
+    load_dotenv()
+    raw = os.environ.get("CARDINAL_DB_PATH", "")
+    if raw:
+        return Path(raw).expanduser()
+    return DEFAULT_DB_PATH
