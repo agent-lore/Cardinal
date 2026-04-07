@@ -1,9 +1,10 @@
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
 from cardinal.cli import cli
-from cardinal.models import ClosingInfo, Commit, Issue
+from cardinal.models import ClosingInfo, Comment, Commit, Issue
 
 
 def test_issues_command(cli_runner: CliRunner, sample_issue: Issue) -> None:
@@ -69,3 +70,92 @@ def test_version(cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(cli, ["--version"])
     assert result.exit_code == 0
     assert "0.1.0" in result.output
+
+
+# --- temporary command tests ---
+
+
+def test_file_command(cli_runner: CliRunner) -> None:
+    mock_client = MagicMock()
+    mock_client.get_file_contents.return_value = "file body here"
+
+    with patch("cardinal.cli._make_client", return_value=mock_client):
+        result = cli_runner.invoke(cli, ["file", "owner/repo", "README.md"])
+
+    assert result.exit_code == 0
+    assert "file body here" in result.output
+    mock_client.get_file_contents.assert_called_once_with(
+        "owner/repo", "README.md", ref=None
+    )
+
+
+def test_file_command_with_ref(cli_runner: CliRunner) -> None:
+    mock_client = MagicMock()
+    mock_client.get_file_contents.return_value = "branch body"
+
+    with patch("cardinal.cli._make_client", return_value=mock_client):
+        result = cli_runner.invoke(
+            cli, ["file", "owner/repo", "README.md", "--ref", "dev"]
+        )
+
+    assert result.exit_code == 0
+    mock_client.get_file_contents.assert_called_once_with(
+        "owner/repo", "README.md", ref="dev"
+    )
+
+
+def test_diff_command(cli_runner: CliRunner) -> None:
+    mock_client = MagicMock()
+    mock_client.get_commit_diff.return_value = "diff --git a/x b/x\n"
+
+    with patch("cardinal.cli._make_client", return_value=mock_client):
+        result = cli_runner.invoke(cli, ["diff", "owner/repo", "abc123"])
+
+    assert result.exit_code == 0
+    assert "diff --git" in result.output
+    mock_client.get_commit_diff.assert_called_once_with("owner/repo", "abc123")
+
+
+def test_comment_command(cli_runner: CliRunner) -> None:
+    mock_client = MagicMock()
+    mock_client.post_comment.return_value = Comment(
+        author="alice",
+        body="hi",
+        created_at=datetime(2025, 3, 1, tzinfo=UTC),
+    )
+
+    with patch("cardinal.cli._make_client", return_value=mock_client):
+        result = cli_runner.invoke(cli, ["comment", "owner/repo", "1", "hi"])
+
+    assert result.exit_code == 0
+    assert "alice" in result.output
+    mock_client.post_comment.assert_called_once_with("owner/repo", 1, "hi")
+
+
+def test_reopen_command(cli_runner: CliRunner, sample_issue: Issue) -> None:
+    mock_client = MagicMock()
+    mock_client.reopen_issue.return_value = sample_issue
+
+    with patch("cardinal.cli._make_client", return_value=mock_client):
+        result = cli_runner.invoke(cli, ["reopen", "owner/repo", "1"])
+
+    assert result.exit_code == 0
+    assert "open" in result.output
+    mock_client.reopen_issue.assert_called_once_with("owner/repo", 1)
+
+
+def test_new_issue_command(cli_runner: CliRunner, sample_issue: Issue) -> None:
+    mock_client = MagicMock()
+    mock_client.open_issue.return_value = sample_issue
+
+    with patch("cardinal.cli._make_client", return_value=mock_client):
+        result = cli_runner.invoke(
+            cli,
+            ["new-issue", "owner/repo", "T", "B", "--label", "bug", "--label", "ci"],
+        )
+
+    assert result.exit_code == 0
+    assert "Opened #1" in result.output
+    mock_client.open_issue.assert_called_once_with(
+        "owner/repo", "T", "B", labels=["bug", "ci"]
+    )

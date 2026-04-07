@@ -2,23 +2,30 @@
 
 from __future__ import annotations
 
+import urllib.request
+
 from github import Github
+from github.ContentFile import ContentFile
 from github.GithubException import UnknownObjectException
 
 from cardinal.config import get_github_token
 from cardinal.converters import (
+    convert_comment,
     convert_commit,
     convert_issue,
     convert_pull_request,
 )
-from cardinal.models import ClosingInfo, Commit, Issue, PullRequest
+from cardinal.models import ClosingInfo, Comment, Commit, Issue, PullRequest
+
+_GITHUB_API = "https://api.github.com"
 
 
 class GitHubClient:
-    """GitHub client that satisfies IssueRepository and CommitRepository protocols."""
+    """GitHub client that satisfies the cardinal.protocols interfaces."""
 
     def __init__(self, token: str | None = None) -> None:
-        self._gh = Github(token or get_github_token())
+        self._token = token or get_github_token()
+        self._gh = Github(self._token)
 
     def get_open_issues(self, owner_repo: str, *, limit: int = 100) -> list[Issue]:
         return self._list_issues(owner_repo, state="open", limit=limit)
@@ -58,6 +65,64 @@ class GitHubClient:
                 return ClosingInfo(commit=commit, pull_request=pr)
 
         return ClosingInfo()  # Closed manually, no linked commit
+
+    def get_file_contents(
+        self, owner_repo: str, path: str, ref: str | None = None
+    ) -> str:
+        repo = self._gh.get_repo(owner_repo)
+        contents = repo.get_contents(path, ref=ref) if ref else repo.get_contents(path)
+        if isinstance(contents, list):
+            msg = f"{path!r} is a directory, not a file"
+            raise ValueError(msg)
+        if not isinstance(contents, ContentFile):
+            msg = f"Unexpected response type for {path!r}: {type(contents).__name__}"
+            raise ValueError(msg)
+        return contents.decoded_content.decode("utf-8")
+
+    def get_commit_diff(self, owner_repo: str, sha: str) -> str:
+        url = f"{_GITHUB_API}/repos/{owner_repo}/commits/{sha}"
+        req = urllib.request.Request(  # noqa: S310 (https URL is fixed)
+            url,
+            headers={
+                "Accept": "application/vnd.github.v3.diff",
+                "Authorization": f"Bearer {self._token}",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "cardinal",
+            },
+        )
+        with urllib.request.urlopen(req) as response:  # noqa: S310
+            return response.read().decode("utf-8")
+
+    def post_comment(self, owner_repo: str, issue_number: int, body: str) -> Comment:
+        repo = self._gh.get_repo(owner_repo)
+        gh_issue = repo.get_issue(issue_number)
+        gh_comment = gh_issue.create_comment(body)
+        return convert_comment(gh_comment)
+
+    def reopen_issue(self, owner_repo: str, issue_number: int) -> Issue:
+        repo = self._gh.get_repo(owner_repo)
+        gh_issue = repo.get_issue(issue_number)
+        gh_issue.edit(state="open")
+        issue = convert_issue(gh_issue)
+        if issue is None:
+            msg = f"#{issue_number} is a pull request, cannot reopen as issue"
+            raise ValueError(msg)
+        return issue
+
+    def open_issue(
+        self,
+        owner_repo: str,
+        title: str,
+        body: str,
+        labels: list[str] | None = None,
+    ) -> Issue:
+        repo = self._gh.get_repo(owner_repo)
+        gh_issue = repo.create_issue(title=title, body=body, labels=labels or [])
+        issue = convert_issue(gh_issue)
+        if issue is None:
+            msg = "Newly created issue unexpectedly classified as a pull request"
+            raise ValueError(msg)
+        return issue
 
     def _list_issues(self, owner_repo: str, *, state: str, limit: int) -> list[Issue]:
         repo = self._gh.get_repo(owner_repo)
