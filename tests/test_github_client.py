@@ -44,10 +44,9 @@ def test_get_file_contents_returns_decoded_text(client_with_mock_gh) -> None:
 
     content = MagicMock()
     content.decoded_content = b"hello world"
-    # Patch isinstance check by making content an actual ContentFile-like object
-    with patch("cardinal.github_client.ContentFile", MagicMock):
-        repo.get_contents.return_value = content
-        result = client.get_file_contents("o/r", "README.md")
+    repo.get_contents.return_value = content
+
+    result = client.get_file_contents("o/r", "README.md")
 
     assert result == "hello world"
     repo.get_contents.assert_called_once_with("README.md")
@@ -60,9 +59,9 @@ def test_get_file_contents_with_ref(client_with_mock_gh) -> None:
 
     content = MagicMock()
     content.decoded_content = b"on branch"
-    with patch("cardinal.github_client.ContentFile", MagicMock):
-        repo.get_contents.return_value = content
-        result = client.get_file_contents("o/r", "README.md", ref="dev")
+    repo.get_contents.return_value = content
+
+    result = client.get_file_contents("o/r", "README.md", ref="dev")
 
     assert result == "on branch"
     repo.get_contents.assert_called_once_with("README.md", ref="dev")

@@ -5,7 +5,6 @@ from __future__ import annotations
 import urllib.request
 
 from github import Github
-from github.ContentFile import ContentFile
 from github.GithubException import UnknownObjectException
 
 from cardinal.config import get_github_token
@@ -73,9 +72,6 @@ class GitHubClient:
         contents = repo.get_contents(path, ref=ref) if ref else repo.get_contents(path)
         if isinstance(contents, list):
             msg = f"{path!r} is a directory, not a file"
-            raise ValueError(msg)
-        if not isinstance(contents, ContentFile):
-            msg = f"Unexpected response type for {path!r}: {type(contents).__name__}"
             raise ValueError(msg)
         return contents.decoded_content.decode("utf-8")
 
