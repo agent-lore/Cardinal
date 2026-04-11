@@ -1,0 +1,39 @@
+# Example Cardinal configuration file.
+#
+# Copy to one of the locations Cardinal searches (see README) and edit
+# to suit your estate. All global sections are optional — only the
+# [[repos]] list is required.
+
+[cardinal.storage]
+db_path = "~/.cardinal/cardinal.db"
+clone_dir = "~/.cardinal/repos"
+
+[cardinal.review]
+reviewers = ["claude"]
+confidence_threshold = 0.7
+
+[cardinal.report]
+top_n = 3
+
+[[repos]]
+owner_repo = "agent-lore/lithos"
+status = "production"
+# importance omitted — defaults to "critical" based on status
+allow_reopen_closed = true
+allow_open_new = true
+lithos_project = "projects/lithos"
+
+[[repos]]
+owner_repo = "agent-lore/Cardinal"
+status = "active"
+importance = "critical"   # explicit override — we care more than a typical active repo
+allow_reopen_closed = true
+allow_open_new = false
+report_top_n = 5
+
+[[repos]]
+owner_repo = "agent-lore/ralph-plus-plus"
+status = "experimental"
+# importance omitted — defaults to "low" based on status
+allow_reopen_closed = false
+allow_open_new = false

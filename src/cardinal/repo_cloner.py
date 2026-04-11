@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from cardinal.config import get_db_path, get_github_token, get_repo_base_dir
+from cardinal.config import get_github_token
 from cardinal.database import RepoRecord, record_repo_fetch
 from cardinal.errors import RepoCloneError
 
@@ -22,27 +22,27 @@ class CloneResult:
     action: str  # "cloned" or "updated"
 
 
-def local_path_for(owner_repo: str, base_dir: Path | None = None) -> Path:
-    """Return the on-disk path for a given owner/repo."""
+def local_path_for(owner_repo: str, base_dir: Path) -> Path:
+    """Return the on-disk path for a given owner/repo under base_dir."""
     owner, _, name = owner_repo.partition("/")
     if not owner or not name:
         msg = f"Expected 'owner/repo' format, got {owner_repo!r}"
         raise ValueError(msg)
-    base = base_dir if base_dir is not None else get_repo_base_dir()
-    return base / owner / name
+    return base_dir / owner / name
 
 
 def clone_or_update(
     owner_repo: str,
     *,
-    base_dir: Path | None = None,
+    base_dir: Path,
+    db_path: Path,
     token: str | None = None,
-    db_path: Path | None = None,
 ) -> CloneResult:
     """Clone owner_repo if missing, otherwise fetch + reset to origin/HEAD.
 
     On success, records (or upserts) a row in the repos table with the
-    current HEAD SHA and a UTC timestamp.
+    current HEAD SHA and a UTC timestamp. ``token`` falls back to
+    :func:`cardinal.config.get_github_token` when omitted.
     """
     target = local_path_for(owner_repo, base_dir=base_dir)
     auth_token = token or get_github_token()
@@ -57,7 +57,7 @@ def clone_or_update(
 
     head_sha = _head_sha(target)
     record_repo_fetch(
-        db_path or get_db_path(),
+        db_path,
         RepoRecord(
             owner_repo=owner_repo,
             local_path=target,
