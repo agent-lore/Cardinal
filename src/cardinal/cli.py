@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import wraps
+from pathlib import Path
 
 import click
 
-from cardinal.config import get_db_path
+from cardinal.config import CardinalConfig, load_config
 from cardinal.database import list_repo_records
 from cardinal.errors import CardinalError
 from cardinal.formatting import (
@@ -39,8 +40,18 @@ def _friendly_errors[**P, R](func: Callable[P, R]) -> Callable[P, R]:
 
 @click.group()
 @click.version_option(package_name="cardinal")
-def cli() -> None:
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Path to cardinal.toml (overrides discovery).",
+)
+@click.pass_context
+@_friendly_errors
+def cli(ctx: click.Context, config_path: Path | None) -> None:
     """Cardinal — GitHub repository analysis tool."""
+    ctx.obj = load_config(config_path)
 
 
 @cli.command()
@@ -145,18 +156,24 @@ def reopen(repo: str, number: int) -> None:
 
 @cli.command("clone")
 @click.argument("repo")
+@click.pass_obj
 @_friendly_errors
-def clone(repo: str) -> None:
+def clone(cfg: CardinalConfig, repo: str) -> None:
     """Clone REPO locally, or update it if already cloned."""
-    result = clone_or_update(repo)
+    result = clone_or_update(
+        repo,
+        base_dir=cfg.storage.clone_dir,
+        db_path=cfg.storage.db_path,
+    )
     click.echo(f"{result.action}: {result.path}")
 
 
 @cli.command("repos")
+@click.pass_obj
 @_friendly_errors
-def repos() -> None:
+def repos(cfg: CardinalConfig) -> None:
     """List recorded repo clones/fetches from the database."""
-    records = list_repo_records(get_db_path())
+    records = list_repo_records(cfg.storage.db_path)
     if not records:
         click.echo("(no repos recorded)")
         return

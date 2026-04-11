@@ -1,10 +1,14 @@
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from cardinal.cli import cli
 from cardinal.models import ClosingInfo, Comment, Commit, Issue
+
+pytestmark = pytest.mark.usefixtures("cardinal_config_env")
 
 
 def test_issues_command(cli_runner: CliRunner, sample_issue: Issue) -> None:
@@ -144,35 +148,42 @@ def test_reopen_command(cli_runner: CliRunner, sample_issue: Issue) -> None:
     mock_client.reopen_issue.assert_called_once_with("owner/repo", 1)
 
 
-def test_clone_command(cli_runner: CliRunner, tmp_path) -> None:
+def test_clone_command(cli_runner: CliRunner, cardinal_config_env: Path) -> None:
     from cardinal.repo_cloner import CloneResult
 
-    fake = CloneResult(path=tmp_path / "owner" / "repo", action="cloned")
+    tmp = cardinal_config_env.parent
+    fake = CloneResult(path=tmp / "repos" / "owner" / "repo", action="cloned")
     with patch("cardinal.cli.clone_or_update", return_value=fake) as mock_clone:
         result = cli_runner.invoke(cli, ["clone", "owner/repo"])
 
     assert result.exit_code == 0
     assert "cloned" in result.output
     assert "owner/repo" in result.output
-    mock_clone.assert_called_once_with("owner/repo")
+    mock_clone.assert_called_once_with(
+        "owner/repo",
+        base_dir=tmp / "repos",
+        db_path=tmp / "cardinal.db",
+    )
 
 
-def test_repos_command_lists_records(cli_runner: CliRunner, tmp_path) -> None:
+def test_repos_command_lists_records(
+    cli_runner: CliRunner, cardinal_config_env: Path
+) -> None:
     from cardinal.database import RepoRecord, record_repo_fetch
 
-    db_path = tmp_path / "cardinal.db"
+    tmp = cardinal_config_env.parent
+    db_path = tmp / "cardinal.db"
     record_repo_fetch(
         db_path,
         RepoRecord(
             owner_repo="agent-lore/Cardinal",
-            local_path=tmp_path / "agent-lore" / "Cardinal",
+            local_path=tmp / "agent-lore" / "Cardinal",
             head_sha="abc12345678",
             last_fetched=datetime(2025, 1, 15, 12, 30, tzinfo=UTC),
         ),
     )
 
-    with patch("cardinal.cli.get_db_path", return_value=db_path):
-        result = cli_runner.invoke(cli, ["repos"])
+    result = cli_runner.invoke(cli, ["repos"])
 
     assert result.exit_code == 0
     assert "agent-lore/Cardinal" in result.output
@@ -180,11 +191,8 @@ def test_repos_command_lists_records(cli_runner: CliRunner, tmp_path) -> None:
     assert "2025-01-15" in result.output
 
 
-def test_repos_command_empty(cli_runner: CliRunner, tmp_path) -> None:
-    db_path = tmp_path / "cardinal.db"
-    with patch("cardinal.cli.get_db_path", return_value=db_path):
-        result = cli_runner.invoke(cli, ["repos"])
-
+def test_repos_command_empty(cli_runner: CliRunner) -> None:
+    result = cli_runner.invoke(cli, ["repos"])
     assert result.exit_code == 0
     assert "no repos recorded" in result.output
 
