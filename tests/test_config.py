@@ -90,7 +90,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # load_dotenv(), which only populates variables that are missing from
     # os.environ. Leaving them absent would let a developer's local .env
     # silently inject CARDINAL_DB_PATH / CARDINAL_REPO_DIR into tests.
-    monkeypatch.delenv("CARDINAL_CONFIG", raising=False)
+    monkeypatch.setenv("CARDINAL_CONFIG", "")
     monkeypatch.setenv("CARDINAL_DB_PATH", "")
     monkeypatch.setenv("CARDINAL_REPO_DIR", "")
 
