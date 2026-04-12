@@ -1,4 +1,4 @@
-.PHONY: install fmt lint typecheck test check
+.PHONY: install fmt lint typecheck test check docker-build
 
 install:
 	uv sync
@@ -17,3 +17,6 @@ test:
 	uv run pytest
 
 check: lint typecheck test
+
+docker-build:
+	docker build -t cardinal:dev -f docker/Dockerfile .

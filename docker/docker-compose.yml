@@ -1,0 +1,17 @@
+# Cardinal Docker Compose configuration
+services:
+  cardinal:
+    image: ${CARDINAL_IMAGE:-cardinal:dev}
+    pull_policy: never
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: cardinal
+    user: "${CARDINAL_UID:-1000}:${CARDINAL_GID:-1000}"
+    volumes:
+      - ${CARDINAL_DATA_PATH:-./data}:/data
+    environment:
+      - CARDINAL_CONFIG=/data/cardinal.toml
+      - CARDINAL_DB_PATH=/data/cardinal.db
+      - CARDINAL_REPO_DIR=/data/repos
+      - CARDINAL_GITHUB_TOKEN=${CARDINAL_GITHUB_TOKEN}
