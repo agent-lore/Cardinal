@@ -16,6 +16,6 @@ jobs:
         with:
           version: "latest"
 
-      - run: uv sync
+      - run: uv sync --locked
 
       - run: make check
