@@ -1,4 +1,5 @@
-.PHONY: install fmt lint typecheck test check docker-build
+.PHONY: install fmt lint typecheck test check docker-build \
+	docker-up-dev docker-up-prod docker-down-dev docker-down-prod
 
 install:
 	uv sync
@@ -20,3 +21,15 @@ check: lint typecheck test
 
 docker-build:
 	docker build -t cardinal:dev -f docker/Dockerfile .
+
+docker-up-dev:
+	./docker/run.sh dev up
+
+docker-up-prod:
+	./docker/run.sh prod up
+
+docker-down-dev:
+	./docker/run.sh dev down
+
+docker-down-prod:
+	./docker/run.sh prod down

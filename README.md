@@ -151,6 +151,54 @@ First file found wins. Error if none found.
 - Duplicate `owner_repo` values — error at load time
 - GitHub token must be resolvable via `CARDINAL_GITHUB_TOKEN` when a command needs to talk to GitHub
 
+## Docker
+
+### Build the image
+
+```bash
+make docker-build
+```
+
+### Multi-environment stacks
+
+Cardinal ships with per-environment Docker stacks driven by `.env.<env>` files.
+Two environments are supported out of the box: `dev` and `prod`. Each stack runs
+with its own Docker Compose project name, container name, and data path, so they
+can coexist on the same host.
+
+Set up an environment file:
+
+```bash
+cp docker/.env.example docker/.env.dev
+# edit docker/.env.dev — fill in CARDINAL_GITHUB_TOKEN
+```
+
+Manage the stack with `docker/run.sh`:
+
+```bash
+./docker/run.sh dev up        # build and start (detached)
+./docker/run.sh dev logs      # follow logs
+./docker/run.sh dev status    # show running containers
+./docker/run.sh dev restart   # down + up
+./docker/run.sh dev down      # stop and remove
+
+./docker/run.sh prod up       # same, for prod
+```
+
+Or via Make:
+
+```bash
+make docker-up-dev
+make docker-down-dev
+make docker-up-prod
+make docker-down-prod
+```
+
+`CARDINAL_ENVIRONMENT` is passed into the container so application code can read
+it (e.g. for logging or telemetry labels).
+
+`.env.example` is committed; `.env.dev` and `.env.prod` are gitignored.
+
 ## Development
 
 Format, lint, type-check, and test:
